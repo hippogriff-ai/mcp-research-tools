@@ -1,7 +1,6 @@
 """Tests for image analysis tool."""
 
 import pytest
-from pathlib import Path
 from unittest.mock import patch, AsyncMock, MagicMock
 
 from mcp_research_tools.tools.image import fetch_image, _guess_content_type
