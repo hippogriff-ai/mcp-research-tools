@@ -1,0 +1,35 @@
+[project]
+name = "mcp-research-tools"
+version = "0.1.0"
+description = "MCP server for search, web fetch, and media processing"
+requires-python = ">=3.13"
+dependencies = [
+    "fastmcp>=2.0.0",
+    "httpx>=0.27.0",
+    "trafilatura>=1.12.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.14.0",
+    "ruff>=0.3.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"

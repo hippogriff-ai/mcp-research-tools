@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "searxng": {
+      "command": "./venv/bin/python",
+      "args": ["-m", "mcp_research_tools.server"]
+    }
+  }
+}

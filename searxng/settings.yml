@@ -1,0 +1,15 @@
+use_default_settings: true
+
+server:
+  secret_key: "REPLACE_ME"
+  limiter: false
+  public_instance: false
+
+search:
+  formats:
+    - html
+    - json
+  safe_search: 0
+
+redis:
+  url: redis://searxng-redis:6379/0
