@@ -1,6 +1,14 @@
 # MCP Research Tools
 
-MCP server providing web search (SearXNG), page fetch (trafilatura), video/audio processing (yt-dlp + ffmpeg + whisper), and image analysis — all running locally on macOS Apple Silicon.
+![License: MIT](https://img.shields.io/badge/license-MIT-blue)
+![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue)
+![MCP](https://img.shields.io/badge/protocol-MCP-green)
+
+Local-first MCP server that gives Claude Code web search, page reading, video transcription, and image analysis — without paid API keys. Runs SearXNG + whisper.cpp natively on Apple Silicon for zero-cost, low-latency research workflows.
+
+### Why this exists
+
+If you run AI agents that search the web as part of their workflow, the API bills add up fast. A single search API call costs fractions of a cent, but when your agent is working around the clock — researching, fetching pages, pulling transcripts — those fractions compound into real money. This server eliminates that cost entirely by running everything locally: SearXNG aggregates 70+ search engines with no API key, trafilatura extracts clean text from any page, and whisper.cpp transcribes audio on-device using Metal acceleration. Plug it into Claude Code via MCP and your agent can research freely without a meter running.
 
 ## Architecture
 
@@ -22,7 +30,7 @@ SearXNG + Redis run in Docker. The MCP server and media tools (ffmpeg, yt-dlp, w
 ## Quick Start
 
 ```bash
-git clone git@github.com:hippogriff-ai/mcp-research-tools.git
+git clone https://github.com/hippogriff-ai/mcp-research-tools.git
 cd mcp-research-tools
 chmod +x install.sh
 ./install.sh
@@ -157,3 +165,7 @@ docker compose logs -f searxng
 # Test JSON API
 curl 'http://localhost:8080/search?q=test&format=json' | python3 -m json.tool
 ```
+
+## Acknowledgements
+
+This project is built on top of [SearXNG](https://github.com/searxng/searxng), a free internet metasearch engine that aggregates results from 70+ search services. SearXNG is what makes zero-cost, private web search possible — massive thanks to their maintainers and contributors.

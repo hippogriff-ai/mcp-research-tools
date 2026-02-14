@@ -51,9 +51,6 @@ async def web_fetch(url: str, extract_text: bool = True) -> dict:
 async def process_video(url: str) -> dict:
     """Download and process a YouTube/TikTok video into transcript + keyframe images.
 
-    Pipeline: download -> trim to 120s -> extract audio -> keyframes every 3s -> transcribe.
-    Returns transcript text and paths to extracted frame images.
-
     Args:
         url: YouTube or TikTok video URL.
     """
@@ -68,9 +65,6 @@ async def process_video(url: str) -> dict:
 @mcp.tool()
 async def analyze_image(source: str) -> dict:
     """Fetch an image for vision analysis. Returns a local file path that Claude can read.
-
-    For URLs: downloads the image locally. For local paths: validates existence.
-    After calling this, use the Read tool on the returned path to see the image.
 
     Args:
         source: Image URL (http/https) or local file path.
