@@ -1,10 +1,16 @@
 """Security utilities: SSRF protection, content sanitization, path validation."""
 
+from __future__ import annotations
+
 import ipaddress
 import re
 import socket
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    import httpx
 
 # ---------------------------------------------------------------------------
 # SSRF protection
@@ -87,6 +93,85 @@ def validate_redirect_url(final_url: str) -> str:
         raise ValueError(
             f"Redirect target blocked (private/reserved IP): {final_url}"
         )
+
+
+MAX_REDIRECTS = 10
+
+
+async def safe_get(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    stream: bool = False,
+) -> httpx.Response:
+    """GET with redirect-safe SSRF protection.
+
+    Follows redirects manually so each hop is validated *before* the
+    network request is made.  Returns the final response.
+    """
+    for _ in range(MAX_REDIRECTS):
+        validate_url(url)
+
+        if stream:
+            # Caller must use this as ``async with safe_stream(...)``
+            raise TypeError("Use safe_stream() for streaming requests")
+
+        resp = await client.get(url)
+
+        if resp.is_redirect:
+            location = resp.headers.get("location", "")
+            if not location:
+                raise ValueError("Redirect with no Location header")
+            # Resolve relative redirects
+            url = str(resp.url.join(location))
+            continue
+
+        return resp
+
+    raise ValueError(f"Too many redirects (>{MAX_REDIRECTS})")
+
+
+class _SafeStream:
+    """Async context manager for streaming GET with per-hop SSRF checks."""
+
+    def __init__(self, client: httpx.AsyncClient, url: str) -> None:
+        self._client = client
+        self._url = url
+        self._resp: httpx.Response | None = None
+        self._stream_cm = None
+
+    async def __aenter__(self) -> httpx.Response:
+        url = self._url
+        for _ in range(MAX_REDIRECTS):
+            validate_url(url)
+            self._stream_cm = self._client.stream("GET", url)
+            resp = await self._stream_cm.__aenter__()
+
+            if resp.is_redirect:
+                # Close this stream before following
+                await self._stream_cm.__aexit__(None, None, None)
+                location = resp.headers.get("location", "")
+                if not location:
+                    raise ValueError("Redirect with no Location header")
+                url = str(resp.url.join(location))
+                continue
+
+            self._resp = resp
+            return resp
+
+        raise ValueError(f"Too many redirects (>{MAX_REDIRECTS})")
+
+    async def __aexit__(self, *exc_info) -> bool:
+        if self._stream_cm is not None:
+            return await self._stream_cm.__aexit__(*exc_info)
+        return False
+
+
+def safe_stream(
+    client: httpx.AsyncClient, url: str
+) -> _SafeStream:
+    """Return an async context manager for streaming GET with SSRF-safe redirects."""
+    return _SafeStream(client, url)
 
 
 # ---------------------------------------------------------------------------

@@ -7,8 +7,8 @@ from bs4 import BeautifulSoup
 from ..config import FETCH_TIMEOUT_SECONDS, MAX_CONTENT_CHARS, MAX_FETCH_SIZE_MB
 from ..security import (
     detect_injection_patterns,
+    safe_stream,
     sanitize_content,
-    validate_redirect_url,
     validate_url,
 )
 
@@ -28,9 +28,9 @@ async def web_fetch(url: str, extract_text: bool = True) -> dict:
     max_bytes = MAX_FETCH_SIZE_MB * 1024 * 1024
 
     async with httpx.AsyncClient(
-        timeout=FETCH_TIMEOUT_SECONDS, follow_redirects=True
+        timeout=FETCH_TIMEOUT_SECONDS, follow_redirects=False
     ) as client:
-        async with client.stream("GET", url) as resp:
+        async with safe_stream(client, url) as resp:
             resp.raise_for_status()
 
             content = b""
@@ -42,9 +42,6 @@ async def web_fetch(url: str, extract_text: bool = True) -> dict:
             status_code = resp.status_code
             final_url = str(resp.url)
             content_type = resp.headers.get("content-type", "").split(";")[0].strip()
-
-    # Block if redirects landed on a private/reserved IP
-    validate_redirect_url(final_url)
 
     result: dict = {
         "status_code": status_code,

@@ -27,9 +27,11 @@ ALLOWED_CATEGORIES = frozenset({
 MEDIA_TEMP_DIR = Path(os.getenv("MEDIA_TEMP_DIR", "/tmp/mcp-media"))
 if MEDIA_TEMP_DIR == Path("/"):
     raise RuntimeError("MEDIA_TEMP_DIR must not be the filesystem root")
+_created = not MEDIA_TEMP_DIR.exists()
 MEDIA_TEMP_DIR.mkdir(parents=True, exist_ok=True)
-# Restrict permissions to owner only (rwx------)
-MEDIA_TEMP_DIR.chmod(0o700)
+if _created:
+    # Restrict permissions to owner only for directories we create
+    MEDIA_TEMP_DIR.chmod(0o700)
 
 MAX_VIDEO_SECONDS = int(os.getenv("MAX_VIDEO_SECONDS", "120"))
 FRAME_EVERY_SECONDS = int(os.getenv("FRAME_EVERY_SECONDS", "3"))

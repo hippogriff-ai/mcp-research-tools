@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 import httpx
 
 from ..config import MAX_IMAGE_SIZE_MB, MEDIA_TEMP_DIR
-from ..security import validate_local_image_path, validate_url
+from ..security import safe_get, validate_local_image_path, validate_url
 
 
 async def fetch_image(source: str) -> dict:
@@ -61,8 +61,9 @@ async def _fetch_remote_image(url: str) -> dict:
 
     max_bytes = MAX_IMAGE_SIZE_MB * 1024 * 1024
 
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        resp = await client.get(url)
+    # follow_redirects=False: safe_get validates each redirect hop
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+        resp = await safe_get(client, url)
         resp.raise_for_status()
 
         if len(resp.content) > max_bytes:
