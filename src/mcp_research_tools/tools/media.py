@@ -2,20 +2,30 @@
 
 import asyncio
 import hashlib
-import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 from ..config import FRAME_EVERY_SECONDS, MAX_VIDEO_SECONDS, MEDIA_TEMP_DIR
+from ..security import validate_url
 
-MEDIA_URL_PATTERNS = [
-    re.compile(r"(youtube\.com|youtu\.be)"),
-    re.compile(r"tiktok\.com"),
-]
+# Allowed hostnames for media platforms (checked via urlparse, not regex)
+_ALLOWED_MEDIA_HOSTS = frozenset({
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "youtu.be",
+    "tiktok.com",
+    "www.tiktok.com",
+    "m.tiktok.com",
+    "vm.tiktok.com",
+})
 
 
 def is_media_url(url: str) -> bool:
-    """Check if URL matches a supported media platform."""
-    return any(p.search(url) for p in MEDIA_URL_PATTERNS)
+    """Check if URL is from a supported media platform (by hostname)."""
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    return hostname in _ALLOWED_MEDIA_HOSTS
 
 
 async def _run_cmd(cmd: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
@@ -110,18 +120,24 @@ async def process_media(url: str) -> dict:
     Returns:
         Dict with transcript, frame paths, audio path, duration, source URL.
     """
-    url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
+    # Validate URL is from an allowed platform and not targeting private IPs
+    if not is_media_url(url):
+        raise ValueError(f"Unsupported media platform: {url}")
+    validate_url(url)
+
+    url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
     work_dir = MEDIA_TEMP_DIR / url_hash
     work_dir.mkdir(parents=True, exist_ok=True)
     frames_dir = work_dir / "frames"
     frames_dir.mkdir(exist_ok=True)
 
-    # 1. Download
+    # 1. Download (--no-exec prevents post-processing script execution)
     rc, _, err = await _run_cmd([
         "yt-dlp",
         "-f", "bv*+ba/b",
         "-o", str(work_dir / "video.%(ext)s"),
         "--no-playlist",
+        "--no-exec",
         url,
     ])
     if rc != 0:

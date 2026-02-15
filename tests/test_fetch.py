@@ -41,7 +41,11 @@ async def test_fetch_html_extracts_text():
     html = b"<html><head><title>Test Page</title></head><body><p>Hello world content</p></body></html>"
     mock_client = _make_mock_client(html, 200, "https://example.com", "text/html")
 
-    with patch("mcp_research_tools.tools.fetch.httpx.AsyncClient", mock_client):
+    with (
+        patch("mcp_research_tools.tools.fetch.validate_url", return_value="https://example.com"),
+        patch("mcp_research_tools.tools.fetch.validate_redirect_url", return_value="https://example.com"),
+        patch("mcp_research_tools.tools.fetch.httpx.AsyncClient", mock_client),
+    ):
         result = await web_fetch("https://example.com")
 
     assert result["status_code"] == 200
@@ -51,13 +55,13 @@ async def test_fetch_html_extracts_text():
 
 @pytest.mark.asyncio
 async def test_fetch_invalid_url_raises():
-    with pytest.raises(ValueError, match="Invalid URL"):
+    with pytest.raises(ValueError, match="scheme"):
         await web_fetch("not-a-url")
 
 
 @pytest.mark.asyncio
 async def test_fetch_ftp_url_raises():
-    with pytest.raises(ValueError, match="Invalid URL"):
+    with pytest.raises(ValueError, match="scheme"):
         await web_fetch("ftp://files.example.com/data")
 
 
@@ -66,8 +70,18 @@ async def test_fetch_html_extracts_title():
     html = b"<html><head><title>My Title</title></head><body><p>Content here</p></body></html>"
     mock_client = _make_mock_client(html, 200, "https://example.com", "text/html; charset=utf-8")
 
-    with patch("mcp_research_tools.tools.fetch.httpx.AsyncClient", mock_client):
+    patches = [
+        patch("mcp_research_tools.tools.fetch.validate_url", return_value="https://example.com"),
+        patch("mcp_research_tools.tools.fetch.validate_redirect_url", return_value="https://example.com"),
+        patch("mcp_research_tools.tools.fetch.httpx.AsyncClient", mock_client),
+    ]
+    for p in patches:
+        p.start()
+    try:
         result = await web_fetch("https://example.com")
+    finally:
+        for p in patches:
+            p.stop()
 
     assert result["title"] == "My Title"
     assert result["content_type"] == "text/html"
@@ -78,8 +92,18 @@ async def test_fetch_json_content():
     json_bytes = b'{"key": "value"}'
     mock_client = _make_mock_client(json_bytes, 200, "https://api.example.com/data", "application/json")
 
-    with patch("mcp_research_tools.tools.fetch.httpx.AsyncClient", mock_client):
+    patches = [
+        patch("mcp_research_tools.tools.fetch.validate_url", return_value="https://api.example.com/data"),
+        patch("mcp_research_tools.tools.fetch.validate_redirect_url", return_value="https://api.example.com/data"),
+        patch("mcp_research_tools.tools.fetch.httpx.AsyncClient", mock_client),
+    ]
+    for p in patches:
+        p.start()
+    try:
         result = await web_fetch("https://api.example.com/data")
+    finally:
+        for p in patches:
+            p.stop()
 
     assert result["content_text"] == '{"key": "value"}'
     assert result["content_type"] == "application/json"
@@ -92,10 +116,19 @@ async def test_fetch_respects_size_limit():
         b"some content that exceeds 0 MB", 200, "https://example.com/huge", "text/html"
     )
 
-    with patch("mcp_research_tools.tools.fetch.MAX_FETCH_SIZE_MB", 0):
-        with patch("mcp_research_tools.tools.fetch.httpx.AsyncClient", mock_client):
-            with pytest.raises(ValueError, match="exceeds"):
-                await web_fetch("https://example.com/huge")
+    patches = [
+        patch("mcp_research_tools.tools.fetch.validate_url", return_value="https://example.com/huge"),
+        patch("mcp_research_tools.tools.fetch.MAX_FETCH_SIZE_MB", 0),
+        patch("mcp_research_tools.tools.fetch.httpx.AsyncClient", mock_client),
+    ]
+    for p in patches:
+        p.start()
+    try:
+        with pytest.raises(ValueError, match="exceeds"):
+            await web_fetch("https://example.com/huge")
+    finally:
+        for p in patches:
+            p.stop()
 
 
 @pytest.mark.asyncio
@@ -104,7 +137,31 @@ async def test_fetch_follows_redirects():
     html = b"<html><body><p>Redirected content</p></body></html>"
     mock_client = _make_mock_client(html, 200, "https://example.com/final", "text/html")
 
-    with patch("mcp_research_tools.tools.fetch.httpx.AsyncClient", mock_client):
+    patches = [
+        patch("mcp_research_tools.tools.fetch.validate_url", return_value="https://example.com/redirect"),
+        patch("mcp_research_tools.tools.fetch.validate_redirect_url", return_value="https://example.com/final"),
+        patch("mcp_research_tools.tools.fetch.httpx.AsyncClient", mock_client),
+    ]
+    for p in patches:
+        p.start()
+    try:
         result = await web_fetch("https://example.com/redirect")
+    finally:
+        for p in patches:
+            p.stop()
 
     assert result["url"] == "https://example.com/final"
+
+
+@pytest.mark.asyncio
+async def test_fetch_blocks_private_ip():
+    """SSRF: fetching a private IP should be rejected."""
+    with pytest.raises(ValueError, match="[Bb]locked"):
+        await web_fetch("http://127.0.0.1/admin")
+
+
+@pytest.mark.asyncio
+async def test_fetch_blocks_metadata_endpoint():
+    """SSRF: cloud metadata endpoint should be rejected."""
+    with pytest.raises(ValueError, match="[Bb]locked"):
+        await web_fetch("http://169.254.169.254/latest/meta-data/")
