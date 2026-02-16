@@ -6,14 +6,16 @@ from urllib.parse import urlparse
 
 import httpx
 
-from ..config import MEDIA_TEMP_DIR
+from ..config import MAX_IMAGE_SIZE_MB, MEDIA_TEMP_DIR
+from ..security import safe_get, validate_local_image_path, validate_url
 
 
 async def fetch_image(source: str) -> dict:
     """Fetch an image from URL or validate a local path.
 
     For URLs: downloads to temp dir and returns local path.
-    For local paths: validates existence and returns path.
+    For local paths: validates the path is inside MEDIA_TEMP_DIR and has an
+    image extension (prevents path-traversal / file-existence probing).
 
     Args:
         source: URL (http/https) or local file path.
@@ -28,8 +30,8 @@ async def fetch_image(source: str) -> dict:
 
 
 def _check_local_image(path: str) -> dict:
-    """Check if a local image file exists."""
-    p = Path(path)
+    """Check if a local image file exists (restricted to MEDIA_TEMP_DIR)."""
+    p = validate_local_image_path(path, allowed_dirs=[MEDIA_TEMP_DIR])
     return {
         "path": str(p),
         "exists": p.exists(),
@@ -39,25 +41,44 @@ def _check_local_image(path: str) -> dict:
 
 async def _fetch_remote_image(url: str) -> dict:
     """Download image from URL to temp directory."""
-    url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
+    validate_url(url)
+
+    url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
     parsed = urlparse(url)
-    ext = Path(parsed.path).suffix or ".jpg"
+    raw_ext = Path(parsed.path).suffix
+    ext = raw_ext if raw_ext.lower() in _IMAGE_EXTS else ".jpg"
 
     images_dir = MEDIA_TEMP_DIR / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
     local_path = images_dir / f"{url_hash}{ext}"
 
     if local_path.exists():
-        return {"path": str(local_path), "exists": True, "content_type": _guess_content_type(ext)}
+        return {
+            "path": str(local_path),
+            "exists": True,
+            "content_type": _guess_content_type(ext),
+        }
 
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        resp = await client.get(url)
+    max_bytes = MAX_IMAGE_SIZE_MB * 1024 * 1024
+
+    # follow_redirects=False: safe_get validates each redirect hop
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+        resp = await safe_get(client, url)
         resp.raise_for_status()
-        local_path.write_bytes(resp.content)
 
+        if len(resp.content) > max_bytes:
+            raise ValueError(f"Image exceeds {MAX_IMAGE_SIZE_MB}MB limit")
+
+        local_path.write_bytes(resp.content)
         content_type = resp.headers.get("content-type", _guess_content_type(ext))
 
     return {"path": str(local_path), "exists": True, "content_type": content_type}
+
+
+_IMAGE_EXTS = frozenset({
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg",
+    ".bmp", ".tiff", ".tif", ".ico", ".heic", ".heif", ".avif",
+})
 
 
 def _guess_content_type(ext: str) -> str:

@@ -106,3 +106,40 @@ async def test_search_strips_query_whitespace():
         result = await searxng_search("  test query  ")
 
     assert result["query"] == "test query"
+
+
+@pytest.mark.asyncio
+async def test_search_rejects_invalid_category():
+    """Invalid categories should be rejected."""
+    with pytest.raises(ValueError, match="Invalid category"):
+        await searxng_search("test", categories="evil_category")
+
+
+@pytest.mark.asyncio
+async def test_search_rejects_malicious_engines():
+    """Engine params with special characters should be rejected."""
+    with pytest.raises(ValueError, match="Invalid characters"):
+        await searxng_search("test", engines="duckduckgo;rm -rf /")
+
+
+@pytest.mark.asyncio
+async def test_search_caps_max_results():
+    """max_results should be capped at 50."""
+    mock_response = {
+        "results": [
+            {"url": f"https://example.com/{i}", "title": f"R{i}", "content": f"S{i}"}
+            for i in range(100)
+        ],
+    }
+    with patch("mcp_research_tools.tools.search.httpx.AsyncClient") as mock_client:
+        mock_instance = AsyncMock()
+        mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = mock_response
+        mock_resp.raise_for_status = MagicMock()
+        mock_instance.get.return_value = mock_resp
+
+        result = await searxng_search("test", max_results=999)
+
+    assert len(result["results"]) <= 50
